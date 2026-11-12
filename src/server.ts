@@ -1,0 +1,9 @@
+import express from "express";import {z} from "zod";export const app=express();app.use(express.json({limit:"256kb"}));
+type Finding={line:number;severity:"warning"|"info";rule:string;message:string};type Review={id:string;filename:string;findings:Finding[];createdAt:string};
+const reviews=new Map<string,Review>();const schema=z.object({filename:z.string().min(1),code:z.string().min(1).max(100000)});
+export function analyze(code:string):Finding[]{const findings:Finding[]=[];code.split("\n").forEach((line,i)=>{if(/\bconsole\.log\s*\(/.test(line))findings.push({line:i+1,severity:"info",rule:"no-console",message:"Remove debug logging before deployment"});if(/\beval\s*\(/.test(line))findings.push({line:i+1,severity:"warning",rule:"no-eval",message:"Avoid dynamic code execution"});if(/\bvar\s+\w+/.test(line))findings.push({line:i+1,severity:"info",rule:"prefer-const",message:"Use block-scoped declarations"});if(/\bTODO\b/.test(line))findings.push({line:i+1,severity:"info",rule:"todo",message:"Resolve outstanding TODO"}});return findings}
+app.get("/health",(_q,r)=>r.json({ok:true}));
+app.post("/api/reviews",(q,r)=>{const parsed=schema.safeParse(q.body);if(!parsed.success)return r.status(400).json({error:"Invalid review"});const review:Review={id:crypto.randomUUID(),filename:parsed.data.filename,findings:analyze(parsed.data.code),createdAt:new Date().toISOString()};reviews.set(review.id,review);return r.status(201).json(review)});
+app.get("/api/reviews/:id",(q,r)=>{const review=reviews.get(q.params.id);return review?r.json(review):r.status(404).json({error:"Not found"})});
+app.get("/api/reviews",(_q,r)=>r.json([...reviews.values()]));
+if(process.env.NODE_ENV!=="test")app.listen(Number(process.env.PORT)||3000);
